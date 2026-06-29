@@ -28,6 +28,7 @@ def build(plain_output: bool) -> int:
 	parser.add_argument("-b", "--kobo", dest="build_kobo", action="store_true", help="Also build a [path].kepub.epub[/] file for Kobo.")
 	parser.add_argument("-c", "--check", action="store_true", help="Use epubcheck to validate the compatible [path].epub[/] file, and the Nu Validator (v.Nu) to validate XHTML5; if Ace is installed, also validate using Ace; if [flag]--kindle[/] is also specified and epubcheck, v.Nu, or Ace fail, don’t create a Kindle file.")
 	parser.add_argument("-k", "--kindle", dest="build_kindle", action="store_true", help="Also build an [path].azw3[/] file for Kindle.")
+	parser.add_argument("--pdf", dest="build_pdf", action="store_true", help="Also build a [path].pdf[/] file using Calibre.")
 	parser.add_argument("-n", "--no-cache", action="store_true", help="Don’t use cached generated images; always rebuild them.")
 	parser.add_argument("-o", "--output-dir", metavar="[path]DIRECTORY[/]", type=str, default="", help="A directory to place output files in; will be created if it doesn’t exist.")
 	parser.add_argument("-p", "--proof", dest="proof", action="store_true", help="Insert additional CSS rules that are helpful for proofreading; output filenames will end in .proof.")
@@ -48,7 +49,7 @@ def build(plain_output: bool) -> int:
 	# If we're called from Parallel, there is no width because Parallel is not a terminal. Thus we must export `$COLUMNS` before invoking Parallel, and then get that value here.
 	console = Console(width=int(os.environ["COLUMNS"]) if called_from_parallel and "COLUMNS" in os.environ else None, highlight=False, theme=se.RICH_THEME, force_terminal=force_terminal) # Syntax highlighting will do weird things when printing paths; `force_terminal` prints colors when called from GNU Parallel.
 
-	if args.check_only and (args.check or args.build_kindle or args.build_kobo or args.proof or args.output_dir):
+	if args.check_only and (args.check or args.build_kindle or args.build_kobo or args.build_pdf or args.proof or args.output_dir):
 		se.print_error("The [flag]--check-only[/] option can’t be combined with any other flags except for [flag]--verbose[/].", plain_output=plain_output)
 		return se.InvalidArgumentsException.code
 
@@ -97,7 +98,7 @@ def build(plain_output: bool) -> int:
 					ebook_cache_directory = None
 
 			# Now build the ebook!
-			se_epub.build(args.check, args.check_only, args.build_kobo, args.build_kindle, Path(args.output_dir), args.proof, ebook_cache_directory)
+			se_epub.build(args.check, args.check_only, args.build_kobo, args.build_kindle, args.build_pdf, Path(args.output_dir), args.proof, ebook_cache_directory)
 
 			# If our cache directory is empty after building, then delete it.
 			if ebook_cache_directory:

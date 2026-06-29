@@ -106,6 +106,7 @@ setup(
 		"smartypants==2.0.2",
 		"tinycss2==1.5.1",
 		"titlecase==2.4.1",
-		"unidecode==1.4.0"
+		"unidecode==1.4.0",
+		"pikepdf==10.3.0"
 	]
 )

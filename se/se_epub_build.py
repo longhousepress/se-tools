@@ -24,6 +24,7 @@ from cairosvg import svg2png # type: ignore Not going to hand-write the type hin
 from PIL import Image, ImageOps
 import lxml.cssselect
 from lxml import etree
+import pikepdf
 import regex
 
 import se
@@ -959,15 +960,25 @@ def _convert_svgs_to_pngs(self: 'SeEpub', work_compatible_epub_dir: Path, metada
 		# Convert SVGs to PNGs at 2x resolution.
 		# Path arguments must be cast to string.
 		png_path = file_path.parent / (str(file_path.stem) + ".png")
-		cache_path = __convert_image(file_path, png_path, 1, build_cache_images_directory)
-		if cache_path:
-			current_cache_paths.add(cache_path)
+
+		# Logo needs higher resolution for print quality; bypass the cache for this special case.
+		if file_path.name == "logo.svg":
+			svg2png(url=str(file_path), write_to=str(png_path), output_width=2400)
+			se.images.optimize_png(png_path)
+		else:
+			cache_path = __convert_image(file_path, png_path, 1, build_cache_images_directory)
+			if cache_path:
+				current_cache_paths.add(cache_path)
 
 		if not ibooks_srcset_bug_exists:
 			png_path = file_path.parent / (str(file_path.stem) + "-2x.png")
-			cache_path = __convert_image(file_path, png_path, 2, build_cache_images_directory)
-			if cache_path:
-				current_cache_paths.add(cache_path)
+			if file_path.name == "logo.svg":
+				svg2png(url=str(file_path), write_to=str(png_path), output_width=4800)
+				se.images.optimize_png(png_path)
+			else:
+				cache_path = __convert_image(file_path, png_path, 2, build_cache_images_directory)
+				if cache_path:
+					current_cache_paths.add(cache_path)
 
 		# Remove the SVG.
 		file_path.unlink()
@@ -1835,7 +1846,101 @@ def _build_kindle(self: 'SeEpub', work_dir: Path, work_compatible_epub_dir: Path
 		kindle_cover_thumbnail_image = kindle_cover_thumbnail_image.resize((432, 648)) # type: ignore This is an error in Pillow's type stub.
 		kindle_cover_thumbnail_image.save(output_dir / f"thumbnail_{asin}_EBOK_portrait.jpg")
 
-def build(self: 'SeEpub', run_epubcheck: bool, check_only: bool, build_kobo: bool, build_kindle: bool, output_dir: Path, proof: bool, build_cache_directory: Path|None) -> None:
+def _build_pdf(self: 'SeEpub', work_dir: Path, work_compatible_epub_dir: Path, output_dir: Path, pdf_output_filename: str, metadata_dom: EasyXmlTree, compatible_epub_output_filename: str, ebook_convert_path: Path, last_updated: datetime | None) -> None:
+	"""
+	Build the PDF file using calibre's ebook-convert.
+
+	INPUTS
+	work_dir: Path to the temporary working directory.
+	work_compatible_epub_dir: Path to the compatibility epub file in the temporary working directory.
+	output_dir: Path to the output directory where pdf files are to be created.
+	pdf_output_filename: Name of the PDF output file.
+	metadata_dom: dom of the metadata file.
+	compatible_epub_output_filename: Name of the compatible epub file.
+	ebook_convert_path: Path to the calibre `ebook-convert` command.
+	last_updated: timestamp of the last commit date.
+
+	OUTPUTS
+	None.
+	"""
+
+	# Calibre inverts PNG colors during PDF conversion, so we pre-invert logo.png and titlepage.png
+	# so that calibre's inversion produces the correct result.
+	images_to_invert = ["logo.png", "titlepage.png"]
+	images_dir = work_compatible_epub_dir / "epub" / "images"
+	backup_images: dict[str, Image.Image] = {}
+
+	for image_name in images_to_invert:
+		image_path = images_dir / image_name
+		if image_path.exists():
+			with Image.open(image_path) as img:
+				backup_images[image_name] = img.copy()
+				img = img.convert("RGBA")
+				r, g, b, a = img.split()
+				rgb = Image.merge("RGB", (r, g, b))
+				inverted_rgb = ImageOps.invert(rgb)
+				inverted = Image.merge("RGBA", (*inverted_rgb.split(), a))
+				inverted.save(image_path)
+
+	# Repack the epub with inverted images for calibre to consume.
+	se.epub.write_epub(work_compatible_epub_dir, work_dir / compatible_epub_output_filename, last_updated)
+
+	# Extract metadata to pass to calibre.
+	title = metadata_dom.xpath("/package/metadata/dc:title[@id='title']/text()", True)
+	authors = [author.text for author in metadata_dom.xpath("/package/metadata/dc:creator")]
+	authors_string = " & ".join(authors) if authors else ""
+	publisher = metadata_dom.xpath("/package/metadata/dc:publisher/text()", True)
+
+	try:
+		with importlib.resources.as_file(importlib.resources.files("se.data").joinpath("css-overrides-pdf.txt")) as css_rules_path:
+			calibre_args = [
+				str(ebook_convert_path),
+				str(work_dir / compatible_epub_output_filename),
+				str(output_dir / pdf_output_filename),
+				"--preserve-cover-aspect-ratio",
+				"--pretty-print",
+				"--custom-size", "613x918",
+				"--unit", "point",
+				"--transform-css-rules", str(css_rules_path),
+			]
+
+			if title:
+				calibre_args.extend(["--title", title])
+			if authors_string:
+				calibre_args.extend(["--authors", authors_string])
+			if publisher:
+				calibre_args.extend(["--publisher", publisher])
+				calibre_args.extend(["--book-producer", publisher])
+
+			calibre_result = subprocess.run(calibre_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+			calibre_result.check_returncode()
+
+		# Strip calibre's hardcoded Producer/Creator metadata from the PDF.
+		pdf_path = output_dir / pdf_output_filename
+		with pikepdf.open(pdf_path, allow_overwriting_input=True) as pdf:
+			if "/Producer" in pdf.docinfo:
+				del pdf.docinfo["/Producer"]
+			if "/Creator" in pdf.docinfo:
+				del pdf.docinfo["/Creator"]
+
+			with pdf.open_metadata(set_pikepdf_as_editor=False) as meta:
+				if "pdf:Producer" in meta:
+					del meta["pdf:Producer"]
+				if "xmp:CreatorTool" in meta:
+					del meta["xmp:CreatorTool"]
+
+			pdf.save()
+
+	except subprocess.CalledProcessError as ex:
+		output = calibre_result.stdout.decode().strip() # pyright: ignore
+		raise se.BuildFailedException(f"[bash]ebook-convert[/] failed with:\n{output}") from ex
+	finally:
+		# Restore the original images in the work directory.
+		for image_name, original_image in backup_images.items():
+			image_path = images_dir / image_name
+			original_image.save(image_path)
+
+def build(self: 'SeEpub', run_epubcheck: bool, check_only: bool, build_kobo: bool, build_kindle: bool, build_pdf: bool, output_dir: Path, proof: bool, build_cache_directory: Path|None) -> None:
 	"""
 	Entry point for `se build`.
 	"""
@@ -1846,6 +1951,17 @@ def build(self: 'SeEpub', run_epubcheck: bool, check_only: bool, build_kobo: boo
 		run_epubcheck = True
 		build_kobo = False
 		build_kindle = False
+
+	# Check for calibre's ebook-convert if building a PDF.
+	ebook_convert_path = None
+	if build_pdf:
+		which_ebook_convert = shutil.which("ebook-convert")
+		if which_ebook_convert:
+			ebook_convert_path = Path(which_ebook_convert)
+		else:
+			ebook_convert_path = Path("/Applications/calibre.app/Contents/MacOS/ebook-convert")
+			if not ebook_convert_path.exists():
+				raise se.MissingDependencyException("Couldn't locate [command]ebook-convert[/]. Is [command]calibre[/] installed?")
 
 	# Check for some required tools.
 	run_ace = False
@@ -1912,6 +2028,7 @@ def build(self: 'SeEpub', run_epubcheck: bool, check_only: bool, build_kobo: boo
 
 	compatible_epub_output_filename = f"{identifier}{'.proof' if proof else ''}.epub"
 	advanced_epub_output_filename = f"{identifier}{'.proof' if proof else ''}_advanced.epub"
+	pdf_output_filename = f"{identifier}{'.proof' if proof else ''}.pdf"
 	kobo_output_filename = f"{identifier}{'.proof' if proof else ''}.kepub.epub"
 	kindle_output_filename = f"{identifier}{'.proof' if proof else ''}.azw3"
 	endnote_files_to_be_chunked: list[Path] = []
@@ -2060,6 +2177,9 @@ def build(self: 'SeEpub', run_epubcheck: bool, check_only: bool, build_kobo: boo
 
 		if build_kindle:
 			_build_kindle(self, work_dir, work_compatible_epub_dir, output_dir, kindle_output_filename, toc_filename, metadata_dom, compatible_epub_output_filename, asin, last_updated)
+
+		if build_pdf:
+			_build_pdf(self, work_dir, work_compatible_epub_dir, output_dir, pdf_output_filename, metadata_dom, compatible_epub_output_filename, ebook_convert_path, last_updated)
 
 	# Build is all done!
 	# Since we made heavy changes to the ebook's DOM, flush the DOM cache in case we use this class again.

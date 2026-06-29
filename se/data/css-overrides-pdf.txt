@@ -1,0 +1,15 @@
+# If the property max-width is 25%
+# Change the value to50%
+action: change
+action_data: 50%
+match_type: is
+property: max-width
+query: 25%
+
+# If the property width is 220px
+# Multiply the value by3
+action: *
+action_data: 3
+match_type: is
+property: width
+query: 220px
