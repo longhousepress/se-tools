@@ -39,6 +39,10 @@ def main() -> None:
 			module = importlib.import_module("se.commands.version")
 			sys.exit(getattr(module, "version")())
 
+		# If we're asked for the longhouse flag, short circuit and exit with success.
+		if len(sys.argv) == 2 and sys.argv[1] == "--longhouse":
+			sys.exit(0)
+
 		commands = get_commands()
 
 		commands_string = ""
