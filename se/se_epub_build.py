@@ -375,8 +375,6 @@ def _add_compatibility_css_and_simplify(self: 'SeEpub', work_compatible_epub_dir
 
 	# Include compatibility CSS.
 	compatibility_css_filename = "compatibility.css"
-	if not self.metadata_dom.xpath("//dc:identifier[starts-with(., 'https://standardebooks.org')]"):
-		compatibility_css_filename = "compatibility-white-label.css"
 
 	with open(work_compatible_epub_dir / "epub" / "css" / "core.css", "a", encoding="utf-8") as css_file:
 		with importlib.resources.files("se.data.templates").joinpath(compatibility_css_filename).open("r", encoding="utf-8") as compatibility_css_file:
@@ -1905,7 +1903,7 @@ def build(self: 'SeEpub', run_epubcheck: bool, check_only: bool, build_kobo: boo
 		identifier = identifier.replace("https://standardebooks.org/ebooks/", "")
 		pieces = identifier.split("/")
 		safe_pieces = [se.formatting.make_url_safe(piece) for piece in pieces]
-		identifier = "_".join(safe_pieces)
+		identifier = "-".join(safe_pieces)
 	except Exception as ex:
 		raise se.InvalidSeEbookException(f"Missing [xml]<dc:identifier>[/] element in [path][link=file://{self.metadata_file_path}]{self.metadata_file_path}[/][/].") from ex
 

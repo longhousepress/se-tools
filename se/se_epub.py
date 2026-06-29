@@ -165,14 +165,10 @@ class SeEpub:
 		except IndexError:
 			pass
 
-		# If our identifier isn't SE-style, we're not an SE ebook.
 		try:
 			self.identifier = self.metadata_dom.xpath("/package/metadata/dc:identifier/text()", str)[0]
-
-			if not self.identifier.startswith("https://standardebooks.org/ebooks/"):
-				self.is_se_ebook = False
 		except IndexError:
-			self.is_se_ebook = False
+			self.identifier = ""
 
 	@property
 	def title(self) -> str|None:
@@ -376,96 +372,22 @@ class SeEpub:
 	def generate_identifier(self) -> str:
 		"""
 		Generate an ebook identifier based on the metadata in the metadata file.
+		Returns identifier in the form "author-name-book-title".
 		"""
 
-		identifier = "https://standardebooks.org/ebooks/"
-
-		if not self.is_se_ebook:
-			identifier = ""
+		identifier = ""
 
 		# Add authors.
-		authors: list[str] = []
 		for author in self.metadata_dom.xpath("/package/metadata/dc:creator"):
-			authors.append(author.text)
-			identifier += se.formatting.make_url_safe(author.text) + "_"
+			identifier += se.formatting.make_url_safe(author.text) + "-"
 
-		identifier = identifier.strip("_") + "/"
+		identifier = identifier.rstrip("-")
 
 		# Add title.
 		for title in self.metadata_dom.xpath("/package/metadata/dc:title[@id=\"title\"]"):
-			identifier += se.formatting.make_url_safe(title.text) + "/"
-
-		# If a book is a collection/omnibus and has more than 1 translator, or if any book has more than 3 translators, combine them into `various-translators` in the identifier.
-		has_various_translators = self.is_se_ebook and len(self.metadata_dom.xpath("//metadata[ (count(./meta[text()='trl']) > 1 and ./meta[@property='schema:additionalType' and text()='http://schema.org/Collection']) or (count(./meta[text()='trl']) > 3)]")) > 0
-		process_translators = True
-		if has_various_translators:
-			identifier += "various-translators/"
-			process_translators = False
-
-		# For contributors, we always add translators except in certain cases, namely if *some* translators have a `display-seq` property, and others do not.
-		# According to the epub spec, if that is the case, we should only add those that *do* have the attribute.
-		# We only add illustrators and editors if they have `display-seq` set to a nonzero value.
-		# By SE convention, any contributor with `display-seq == 0` will be excluded from the identifier string.
-		translators: list[MetadataContributor] = []
-		illustrators: list[MetadataContributor] = []
-		editors: list[MetadataContributor] = []
-		translators_have_display_seq = False
-		for role in self.metadata_dom.xpath("/package/metadata/meta[@property='role']"):
-			contributor_id = role.get_attr("refines").lstrip("#")
-			contributor_element = self.metadata_dom.xpath("/package/metadata/dc:contributor[@id=\"" + contributor_id + "\"]")
-			if contributor_element:
-				contributor = MetadataContributor(contributor_element[0].text, True, None)
-				display_seq = self.metadata_dom.xpath("/package/metadata/meta[@property=\"display-seq\"][@refines=\"#" + contributor_id + "\"]")
-
-				if display_seq and int(display_seq[0].text) == 0:
-					contributor.include = False
-					display_seq = []
-
-				if role.text == "trl" and process_translators:
-					if display_seq:
-						contributor.display_seq = int(display_seq[0].text)
-						translators_have_display_seq = True
-
-					translators.append(contributor)
-
-				if role.text == "ill" and display_seq:
-					contributor.display_seq = int(display_seq[0].text)
-
-					illustrators.append(contributor)
-
-				if role.text == "edt" and display_seq:
-					contributor.display_seq = int(display_seq[0].text)
-
-					editors.append(contributor)
-
-		for translator in translators:
-			if (not translators_have_display_seq and translator.include) or translator.display_seq:
-				identifier += se.formatting.make_url_safe(translator.name) + "_"
-
-		if translators:
-			identifier = identifier.strip("_") + "/"
-
-		for editor in editors:
-			identifier += se.formatting.make_url_safe(editor.name) + "_"
-
-		for illustrator in illustrators:
-			include_illustrator = True
-
-			# If the translator or editor is also the illustrator, don't include them twice.
-			for translator in translators:
-				if illustrator.name == translator.name:
-					include_illustrator = False
-					break
-
-			for editor in editors:
-				if illustrator.name == editor.name:
-					include_illustrator = False
-					break
-
-			if include_illustrator and (illustrator.include or illustrator.display_seq):
-				identifier += se.formatting.make_url_safe(illustrator.name) + "_"
-
-		identifier = identifier.strip("_/")
+			if identifier:
+				identifier += "-"
+			identifier += se.formatting.make_url_safe(title.text)
 
 		return identifier
 

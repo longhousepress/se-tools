@@ -357,7 +357,7 @@ def _create_draft(args: Namespace, plain_output: bool):
 
 			authors_xml = _generate_metadata_contributor_xml(authors, "author")
 			authors_xml = authors_xml.replace("dc:contributor", "dc:creator")
-			metadata_xml = regex.sub(r"<dc:creator id=\"author\">AUTHOR_NAME</dc:creator>.+?scheme=\"marc:relators\">aut</meta>", authors_xml, metadata_xml, flags=regex.DOTALL)
+			metadata_xml = regex.sub(r"<dc:creator id=\"author\">AUTHOR</dc:creator>.+?scheme=\"marc:relators\">aut</meta>", authors_xml, metadata_xml, flags=regex.DOTALL)
 
 			if translators:
 				translators_xml = _generate_metadata_contributor_xml(translators, "translator")
