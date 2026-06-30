@@ -976,9 +976,14 @@ class SeEpub:
 
 		svg = ""
 
-		# Read our template SVG to get some values before we begin.
-		with importlib.resources.files("se.data.templates").joinpath("titlepage.svg").open("r", encoding="utf-8") as file:
-			svg = file.read()
+		# Read the project's own titlepage.svg if present (allows per-project font overrides);
+		# otherwise fall back to the SE global template.
+		source_titlepage = self.path / "images" / "titlepage.svg"
+		if source_titlepage.is_file():
+			svg = source_titlepage.read_text(encoding="utf-8")
+		else:
+			with importlib.resources.files("se.data.templates").joinpath("titlepage.svg").open("r", encoding="utf-8") as file:
+				svg = file.read()
 
 		# Remove the template text elements from the SVG source, we'll write out to it later.
 		svg = regex.sub(r"\s*<text.+</svg>", "</svg>", svg, flags=regex.DOTALL).strip()

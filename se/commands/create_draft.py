@@ -116,6 +116,23 @@ def _copy_template_file(filename: str, dest_path: Path) -> None:
 	with importlib.resources.as_file(importlib.resources.files("se.data.templates").joinpath(filename)) as src_path:
 		shutil.copyfile(src_path, dest_path)
 
+def _copy_longhouse_template_file(filename: str, lang: str, dest_path: Path) -> None:
+	"""
+	Copy a Longhouse template file to the given destination `Path`.
+	Tries `longhouse/{lang}/{filename}` first, then falls back to `longhouse/{filename}`.
+	"""
+	if dest_path.is_dir():
+		dest_path = dest_path / filename
+	for subpath in (("longhouse", lang, filename), ("longhouse", filename)):
+		try:
+			src = importlib.resources.files("se.data.templates").joinpath(*subpath)
+			with importlib.resources.as_file(src) as src_path:
+				shutil.copyfile(src_path, dest_path)
+				return
+		except FileNotFoundError:
+			continue
+	raise FileNotFoundError(f"Longhouse template not found: {filename} (lang={lang})")
+
 def _add_name_abbr(contributor: str) -> str:
 	"""
 	Add `<abbr epub:type="z3998:given-name">` around contributor names.
@@ -334,19 +351,16 @@ def _create_draft(args: Namespace, plain_output: bool):
 			_copy_template_file("toc-white-label.xhtml", content_path / "epub" / "toc.xhtml")
 
 		else:
-			_copy_template_file("cover.jpg", work_path / "images")
-			_copy_template_file("cover.svg", work_path / "images")
-			_copy_template_file("titlepage.svg", work_path / "images")
+			lang = args.language
+			_copy_longhouse_template_file("titlepage.svg", lang, work_path / "images")
 			_copy_template_file("local.css", content_path / "epub" / "css")
-			_copy_template_file("se.css", content_path / "epub" / "css")
-			_copy_template_file("logo.svg", content_path / "epub" / "images")
-			_copy_template_file("colophon.xhtml", content_path / "epub" / "text")
-			_copy_template_file("imprint.xhtml", content_path / "epub" / "text")
-			_copy_template_file("uncopyright.xhtml", content_path / "epub" / "text")
-			_copy_template_file("titlepage.xhtml", content_path / "epub" / "text")
-			_copy_template_file("content.opf", content_path / "epub")
-			_copy_template_file("toc.xhtml", content_path / "epub")
-			_copy_template_file("LICENSE.md", work_path)
+			_copy_longhouse_template_file("se.css", lang, content_path / "epub" / "css")
+			_copy_longhouse_template_file("logo.svg", lang, content_path / "epub" / "images")
+			_copy_longhouse_template_file("imprint.xhtml", lang, content_path / "epub" / "text")
+			_copy_longhouse_template_file("titlepage.xhtml", lang, content_path / "epub" / "text")
+			_copy_longhouse_template_file("content.opf", lang, content_path / "epub")
+			_copy_longhouse_template_file("toc.xhtml", lang, content_path / "epub")
+			_copy_longhouse_template_file("longhouse.yaml", lang, work_path)
 
 		# Fill out some basic data in the metadata file that will let is generate further variables.
 		with open(content_path / "epub" / "content.opf", "r+", encoding="utf-8") as file:
@@ -383,6 +397,17 @@ def _create_draft(args: Namespace, plain_output: bool):
 
 		for node in epub.metadata_dom.xpath("//*[contains(., 'IDENTIFIER') and not(./*)]"):
 			node.set_text(node.inner_text().replace('IDENTIFIER', epub.generate_identifier()))
+
+		if not args.white_label:
+			# Set dc:language for Longhouse drafts. (For SE drafts with a transcription source, this is
+			# set later when transcription language is detected; doing it here is a safe no-op in that case.)
+			dc_language = "en-US" if args.language == "en" else "bg"
+			for node in epub.metadata_dom.xpath("//*[contains(., 'LANG') and not(./*)]"):
+				node.set_text(node.inner_text().replace("LANG", dc_language))
+			toc_dom = epub.get_dom(epub.toc_path)
+			for node in toc_dom.xpath("//*[contains(@xml:lang, 'LANG')]"):
+				node.set_attr("xml:lang", dc_language)
+			epub.write_dom(epub.toc_path)
 
 		if epub.is_se_ebook:
 			for node in epub.metadata_dom.xpath("//link[@href='VCS_URL']"):
@@ -809,12 +834,12 @@ def _create_draft(args: Namespace, plain_output: bool):
 			if not(len(authors) == 1 and authors[0].name == "Anonymous"):
 				titlepage_xhtml = titlepage_xhtml.replace("AUTHOR_NAME", _generate_titlepage_string(authors, "author"))
 			else:
-				titlepage_xhtml = regex.sub(r"<p>By.+?</p>", "", titlepage_xhtml, flags=regex.DOTALL)
+				titlepage_xhtml = regex.sub(r"<p>[^<]*AUTHOR_NAME[^<]*</p>", "", titlepage_xhtml)
 
 			if translators:
 				titlepage_xhtml = titlepage_xhtml.replace("TRANSLATOR_NAME", _generate_titlepage_string(translators, "translator"))
 			else:
-				titlepage_xhtml = regex.sub(r"<p>Translated by.+?</p>", "", titlepage_xhtml, flags=regex.DOTALL)
+				titlepage_xhtml = regex.sub(r"<p>[^<]*TRANSLATOR_NAME[^<]*</p>", "", titlepage_xhtml)
 
 			# If there are terminal abbreviations like `Jr.`, remove duplicated periods.
 			titlepage_xhtml = regex.sub(r"([\p{Letter}]\.(</abbr>|</b>|</abbr></b>)?)\.", r"\1", titlepage_xhtml)
@@ -832,73 +857,76 @@ def _create_draft(args: Namespace, plain_output: bool):
 			epub.write_dom(epub.toc_path)
 
 		if not args.white_label:
-			# Fill out the colophon.
-			with open(content_path / "epub" / "text" / "colophon.xhtml", "r+", encoding="utf-8") as file:
-				colophon_xhtml = file.read()
+			colophon_path = content_path / "epub" / "text" / "colophon.xhtml"
+			if colophon_path.is_file():
+				# Fill out the colophon.
+				with open(colophon_path, "r+", encoding="utf-8") as file:
+					colophon_xhtml = file.read()
 
-				colophon_xhtml = colophon_xhtml.replace("SE_SLUG", epub.generate_url_slug())
-				colophon_xhtml = colophon_xhtml.replace("TITLE", escape(title))
+					colophon_xhtml = colophon_xhtml.replace("SE_SLUG", epub.generate_url_slug())
+					colophon_xhtml = colophon_xhtml.replace("TITLE", escape(title))
 
-				contributor_string = _generate_contributor_string(authors, True)
+					contributor_string = _generate_contributor_string(authors, True)
 
-				if contributor_string == "":
-					colophon_xhtml = colophon_xhtml.replace(" by<br/>\n\t\t\t<a href=\"AUTHOR_WIKI_URL\">AUTHOR_NAME</a>", escape(contributor_string))
-				else:
-					colophon_xhtml = colophon_xhtml.replace("<a href=\"AUTHOR_WIKI_URL\">AUTHOR_NAME</a>", contributor_string)
+					if contributor_string == "":
+						colophon_xhtml = colophon_xhtml.replace(" by<br/>\n\t\t\t<a href=\"AUTHOR_WIKI_URL\">AUTHOR_NAME</a>", escape(contributor_string))
+					else:
+						colophon_xhtml = colophon_xhtml.replace("<a href=\"AUTHOR_WIKI_URL\">AUTHOR_NAME</a>", contributor_string)
 
-				if translators:
-					translator_block = f"It was translated from ORIGINAL_LANGUAGE in <time>TRANSLATION_YEAR</time> by<br/>\n\t\t\t{_generate_contributor_string(translators, True)}.</p>"
-					colophon_xhtml = colophon_xhtml.replace("</p>\n\t\t\t<p>This ebook was produced for<br/>", f"<br/>\n\t\t\t{translator_block}\n\t\t\t<p>This ebook was produced for<br/>")
+					if translators:
+						translator_block = f"It was translated from ORIGINAL_LANGUAGE in <time>TRANSLATION_YEAR</time> by<br/>\n\t\t\t{_generate_contributor_string(translators, True)}.</p>"
+						colophon_xhtml = colophon_xhtml.replace("</p>\n\t\t\t<p>This ebook was produced for<br/>", f"<br/>\n\t\t\t{translator_block}\n\t\t\t<p>This ebook was produced for<br/>")
 
-				if transcription_url:
-					colophon_xhtml = colophon_xhtml.replace("TRANSCRIPTION_URL", transcription_url)
+					if transcription_url:
+						colophon_xhtml = colophon_xhtml.replace("TRANSCRIPTION_URL", transcription_url)
 
-				if transcription_publication_year:
-					colophon_xhtml = colophon_xhtml.replace("TRANSCRIPTION_YEAR", transcription_publication_year)
+					if transcription_publication_year:
+						colophon_xhtml = colophon_xhtml.replace("TRANSCRIPTION_YEAR", transcription_publication_year)
 
-				if transcription_producers:
-					producer_count = len(transcription_producers)
-					producers_xhtml = ""
-					for i, producer in enumerate(transcription_producers):
-						if "Distributed Proofreaders Canada" in producer:
-							producers_xhtml = producers_xhtml + """<a href="https://www.pgdpcanada.net/">Distributed Proofreaders Canada</a>"""
-						elif "Distributed Proofread" in producer:
-							producers_xhtml = producers_xhtml + """<a href="https://www.pgdp.net/">Distributed Proofreaders</a>"""
-						elif "anonymous" in producer.lower():
-							producers_xhtml = producers_xhtml + """<b epub:type="z3998:personal-name">An Anonymous Volunteer</b>"""
-						else:
-							producers_xhtml = producers_xhtml + f"""<b epub:type="z3998:personal-name">{_add_name_abbr(escape(producer)).strip('.')}</b>"""
-
-						if i < producer_count - 1:
-							# If exactly two producers, we don't want a comma between them.
-							if producer_count == 2:
-								producers_xhtml = producers_xhtml + " "
+					if transcription_producers:
+						producer_count = len(transcription_producers)
+						producers_xhtml = ""
+						for i, producer in enumerate(transcription_producers):
+							if "Distributed Proofreaders Canada" in producer:
+								producers_xhtml = producers_xhtml + """<a href="https://www.pgdpcanada.net/">Distributed Proofreaders Canada</a>"""
+							elif "Distributed Proofread" in producer:
+								producers_xhtml = producers_xhtml + """<a href="https://www.pgdp.net/">Distributed Proofreaders</a>"""
+							elif "anonymous" in producer.lower():
+								producers_xhtml = producers_xhtml + """<b epub:type="z3998:personal-name">An Anonymous Volunteer</b>"""
 							else:
-								producers_xhtml = producers_xhtml + ", "
+								producers_xhtml = producers_xhtml + f"""<b epub:type="z3998:personal-name">{_add_name_abbr(escape(producer)).strip('.')}</b>"""
 
-						if i == producer_count - 2:
-							producers_xhtml = producers_xhtml + "and "
+							if i < producer_count - 1:
+								# If exactly two producers, we don't want a comma between them.
+								if producer_count == 2:
+									producers_xhtml = producers_xhtml + " "
+								else:
+									producers_xhtml = producers_xhtml + ", "
 
-					producers_xhtml = producers_xhtml + "<br/>"
+							if i == producer_count - 2:
+								producers_xhtml = producers_xhtml + "and "
 
-					colophon_xhtml = colophon_xhtml.replace("""<b epub:type="z3998:personal-name">TRANSCRIBER_1_NAME</b>, <b epub:type="z3998:personal-name">TRANSCRIBER_2_NAME</b>, and <a href="https://www.pgdp.net/">Distributed Proofreaders</a><br/>""", producers_xhtml)
+						producers_xhtml = producers_xhtml + "<br/>"
 
-				if transcription_source:
-					colophon_xhtml = colophon_xhtml.replace("TRANSCRIPTION_SOURCE", escape(transcription_source))
+						colophon_xhtml = colophon_xhtml.replace("""<b epub:type="z3998:personal-name">TRANSCRIBER_1_NAME</b>, <b epub:type="z3998:personal-name">TRANSCRIBER_2_NAME</b>, and <a href="https://www.pgdp.net/">Distributed Proofreaders</a><br/>""", producers_xhtml)
 
-				# If there are terminal abbreviations like `Jr.`, remove duplicated periods.
-				colophon_xhtml = regex.sub(r"([\p{Letter}]\.(</abbr>|</b>|</abbr></b>)?)\.", r"\1", colophon_xhtml)
+					if transcription_source:
+						colophon_xhtml = colophon_xhtml.replace("TRANSCRIPTION_SOURCE", escape(transcription_source))
 
-				file.seek(0)
-				file.write(colophon_xhtml)
-				file.truncate()
+					# If there are terminal abbreviations like `Jr.`, remove duplicated periods.
+					colophon_xhtml = regex.sub(r"([\p{Letter}]\.(</abbr>|</b>|</abbr></b>)?)\.", r"\1", colophon_xhtml)
+
+					file.seek(0)
+					file.write(colophon_xhtml)
+					file.truncate()
 
 			# Build the cover/titlepage for distribution.
 			epub.generate_titlepage_svg()
 			epub.build_titlepage_svg()
 
-			epub.generate_cover_svg()
-			epub.build_cover_svg()
+			if (work_path / "images" / "cover.svg").is_file():
+				epub.generate_cover_svg()
+				epub.build_cover_svg()
 
 			if transcription_url:
 				_replace_in_file(content_path / "epub" / "text" / "imprint.xhtml", "TRANSCRIPTION_URL", transcription_url)
@@ -941,6 +969,7 @@ def create_draft(plain_output: bool) -> int:
 	source_group.add_argument("-p", "--pg-id", dest="pg_id", type=se.is_positive_integer, help="The Project Gutenberg ID number of the ebook to download.")
 	parser.add_argument("-r", "--translator", dest="translator", nargs="+", help="A translator of the ebook.")
 	parser.add_argument("-t", "--title", dest="title", required=True, help="The title of the ebook.")
+	parser.add_argument("-l", "--language", dest="language", choices=["en", "bg"], default="en", help="Language for Longhouse assets: [arg]en[/] (default) or [arg]bg[/]. Determines which per-language templates are used.")
 	parser.add_argument("-v", "--verbose", action="store_true", help="Increase output verbosity.")
 	parser.add_argument("-w", "--white-label", action="store_true", help="Create a generic epub skeleton without Standard Ebooks branding.")
 	args = parser.parse_args()

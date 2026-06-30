@@ -1,0 +1,47 @@
+@charset "utf-8";
+@namespace epub "http://www.idpf.org/2007/ops";
+
+section[epub|type~="titlepage"] h1,
+section[epub|type~="titlepage"] p,
+section[epub|type~="imprint"] h2{
+	left: -999em;
+	position: absolute;
+}
+
+section[epub|type~="titlepage"] img{
+	display: block;
+	margin: 3em auto auto auto;
+	width: 100%;
+}
+
+section[epub|type~="imprint"]{
+	text-align: center;
+}
+
+section[epub|type~="imprint"] header{
+	line-height: 0;
+	margin-top: 3em;
+}
+
+img[epub|type~="z3998:publisher-logo"]{
+	max-width: 25%;
+	width: 220px;
+}
+
+section[epub|type~="imprint"] p{
+	margin: 1em auto 0 auto;
+	text-indent: 0;
+}
+
+section[epub|type~="imprint"] p{
+	font-size: smaller;
+	margin-left: 12.5%; /* make the logo centered on kindle */
+	margin-right: 12.5%; /* make the logo centered on kindle */
+	text-align: justify;
+	width: 75%;
+}
+
+section[epub|type~="imprint"] a{
+	hyphens: none;
+	-epub-hyphens: none;
+}

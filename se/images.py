@@ -530,7 +530,7 @@ def svg_text_to_paths(in_svg: Path, out_svg: Path, remove_style: bool=True) -> N
 	"""
 
 	font_paths: list[Path] = []
-	name_list = {"league_spartan": ["league-spartan-bold.svg"], "sorts_mill_goudy": ["sorts-mill-goudy-italic.svg", "sorts-mill-goudy.svg"]}
+	name_list = {"league_spartan": ["league-spartan-bold.svg"], "sorts_mill_goudy": ["sorts-mill-goudy-italic.svg", "sorts-mill-goudy.svg"], "raleway": ["raleway-bold.svg", "raleway-italic.svg"]}
 	for font_family, font_names in name_list.items():
 		for font_name in font_names:
 			with importlib.resources.as_file(importlib.resources.files(f"se.data.fonts.{font_family}").joinpath(font_name)) as font_path:
