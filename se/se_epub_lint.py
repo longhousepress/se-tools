@@ -8,12 +8,15 @@ toolset still depend on: `SourceFile`, `LintMessage`, `LintSubmessage`, and `fil
 
 from bisect import bisect_right
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import regex
 
 import se
 from se.easy_xml import EasyXmlElement
+
+if TYPE_CHECKING:
+	from se.se_epub import SeEpub # Import under type checking guard to prevent circular import error.
 
 NEWLINE_PATTERN = regex.compile(r"\n")
 
@@ -226,4 +229,3 @@ def files_not_in_spine(self: 'SeEpub') -> set[Path]:
 	xhtml_files = set(self.content_path.glob("**/*.xhtml"))
 	spine_files = set(self.spine_file_paths + [self.toc_path])
 	return xhtml_files.difference(spine_files)
-

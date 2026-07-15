@@ -1846,7 +1846,7 @@ def _build_kindle(self: 'SeEpub', work_dir: Path, work_compatible_epub_dir: Path
 		kindle_cover_thumbnail_image = kindle_cover_thumbnail_image.resize((432, 648)) # type: ignore This is an error in Pillow's type stub.
 		kindle_cover_thumbnail_image.save(output_dir / f"thumbnail_{asin}_EBOK_portrait.jpg")
 
-def _build_pdf(self: 'SeEpub', work_dir: Path, work_compatible_epub_dir: Path, output_dir: Path, pdf_output_filename: str, metadata_dom: EasyXmlTree, compatible_epub_output_filename: str, ebook_convert_path: Path, last_updated: datetime | None) -> None:
+def _build_pdf(self: 'SeEpub', work_dir: Path, work_compatible_epub_dir: Path, output_dir: Path, pdf_output_filename: str, metadata_dom: EasyXmlTree, compatible_epub_output_filename: str, ebook_convert_path: Path, last_updated: datetime | None) -> None: # pylint: disable=unused-argument
 	"""
 	Build the PDF file using calibre's ebook-convert.
 
@@ -1886,10 +1886,12 @@ def _build_pdf(self: 'SeEpub', work_dir: Path, work_compatible_epub_dir: Path, o
 	se.epub.write_epub(work_compatible_epub_dir, work_dir / compatible_epub_output_filename, last_updated)
 
 	# Extract metadata to pass to calibre.
-	title = metadata_dom.xpath("/package/metadata/dc:title[@id='title']/text()", True)
+	title_results = metadata_dom.xpath("/package/metadata/dc:title[@id='title']/text()", str)
+	title = title_results[0] if title_results else ""
 	authors = [author.text for author in metadata_dom.xpath("/package/metadata/dc:creator")]
 	authors_string = " & ".join(authors) if authors else ""
-	publisher = metadata_dom.xpath("/package/metadata/dc:publisher/text()", True)
+	publisher_results = metadata_dom.xpath("/package/metadata/dc:publisher/text()", str)
+	publisher = publisher_results[0] if publisher_results else ""
 
 	try:
 		with importlib.resources.as_file(importlib.resources.files("se.data").joinpath("css-overrides-pdf.txt")) as css_rules_path:
@@ -2178,7 +2180,7 @@ def build(self: 'SeEpub', run_epubcheck: bool, check_only: bool, build_kobo: boo
 		if build_kindle:
 			_build_kindle(self, work_dir, work_compatible_epub_dir, output_dir, kindle_output_filename, toc_filename, metadata_dom, compatible_epub_output_filename, asin, last_updated)
 
-		if build_pdf:
+		if build_pdf and ebook_convert_path:
 			_build_pdf(self, work_dir, work_compatible_epub_dir, output_dir, pdf_output_filename, metadata_dom, compatible_epub_output_filename, ebook_convert_path, last_updated)
 
 	# Build is all done!

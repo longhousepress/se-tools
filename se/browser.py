@@ -43,4 +43,5 @@ def initialize_selenium_firefox_webdriver() -> webdriver.firefox.webdriver.WebDr
 
 	options.profile = profile
 
-	return webdriver.Firefox(options=options) # type: ignore This is an error in Seleniums's type stub.
+	# `webdriver.Firefox` is in fact callable; this is an error in Selenium's type stub.
+	return webdriver.Firefox(options=options) # type: ignore # pylint: disable=not-callable

@@ -1,0 +1,15 @@
+# longhouse.yaml — per-book configuration for the inserter tool.
+# Fill in all fields before publishing.
+
+publication_year: 1900  # TODO: update to actual publication year
+original_language: eng  # ISO 639-3 code of the language the work was originally written in
+cover_artwork_title: ""
+categories: []  # TODO: add category IDs
+samples: []  # TODO: add page numbers for sample PDF
+
+localizations:
+  eng:
+    title: ""
+    short_description: ""
+    description: ""
+    author_bio: ""
