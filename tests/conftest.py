@@ -18,7 +18,6 @@ def pytest_addoption(parser: pytest.Parser):
 	"""
 	Additional pytest command-line options.
 	"""
-	parser.addoption("--lint-subset", action="store", dest="lint_subset", choices=("css","filesystem","metadata","semantics","typography","typos","xhtml"),  help="Specify a subset of lint tests to be performed")
 	parser.addoption("--save-golden-files", action="store_true", default=False, help="Save updated versions of all golden output files")
 	parser.addoption("--save-new-draft", action="store_true", default=False, help="Update draft ebook used as base for ebookcmd tests")
 

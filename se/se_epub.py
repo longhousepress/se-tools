@@ -1968,12 +1968,10 @@ class SeEpub:
 
 	def lint(self, skip_lint_ignore: bool, allowed_messages: list[str] | None = None) -> list[LintMessage]:
 		"""
-		The `self.lint()` function is very big so for readability and maintainability it's broken out to a separate file. Strictly speaking that file can be inlined into this class.
+		The Longhouse Press fork of the SE tools package does not implement a linter.
 		"""
 
-		from se.se_epub_lint import lint # pylint: disable=import-outside-toplevel,cyclic-import
-
-		return lint(self, skip_lint_ignore, allowed_messages)
+		raise se.NotImplementedException("The Longhouse Press fork of the SE tools package does not implement a linter.")
 
 	def build(self, run_epubcheck: bool, check_only: bool, build_kobo: bool, build_kindle: bool, build_pdf: bool, output_directory: Path, proof: bool, build_cache_directory: Path|None) -> None:
 		"""

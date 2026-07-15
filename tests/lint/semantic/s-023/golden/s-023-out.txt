@@ -1,2 +1,0 @@
-t-010 [Manual Review] chapter-1.xhtml Time set with `.` instead of `:`.
- Line 9:        4.50

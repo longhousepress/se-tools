@@ -1,2 +1,0 @@
-s-108 [Error] chapter-1.xhtml `<thead>` element with non-empty `<td>` descendant. Hint: Use `<th>` instead.
- Line 13:       <td>
